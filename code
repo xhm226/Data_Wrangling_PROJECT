@@ -1,0 +1,196 @@
+---
+title: "xia_project_02"
+author: "heming xia"
+date: "April 29, 2018"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(flexdashboard)
+library(knitr)
+library(readr)
+library(tidyr)
+library(dplyr)
+library(printr)
+library(DT)
+library(stringr)
+library(plotly)
+library(choroplethr)
+library(tidyverse)
+library(viridis)
+library(maps)
+```
+
+
+
+Data source: Zillow Rent Index, 2010-Present from Kaggle
+
+This dataset was downloaded from Kaggle and is provided by Zillow. The dataset has 2 spreadsheets:
+1.Zillow Rent Index: It consists of the median estimated monthly rental price(rent index) information for a given area
+2.Rent per square ft: It consists of the monthly rent per sq ft information for a given area
+
+#Download csv file first
+
+```{r}
+rentsqft.raw <- read_csv("https://raw.githubusercontent.com/andhrurk12/Data-Wrangling-with-R/master/pricepersqft.csv")
+write.csv(rentsqft.raw, file = "rentsqft.csv")
+rentind.raw <- read_csv("https://raw.githubusercontent.com/andhrurk12/Data-Wrangling-with-R/master/price.csv")
+write.csv(rentind.raw, file="rentind.csv")
+rentind.raw <- read_csv("rentind.csv")
+class(rentsqft.raw)
+class(rentind.raw)
+pop <- read_csv("https://raw.githubusercontent.com/andhrurk12/Data-Wrangling-with-R/master/Populationestimates.csv") 
+write.csv(pop, file="pop.csv")
+
+```
+
+#Start Using the gather function from class to clean the data.
+```{r}
+rentsqft.raw1 <- gather(rentsqft.raw, Month, Rentpersqft, `November 2010`:`January 2017`)
+names(rentsqft.raw1)
+rentind.raw1 <- gather(rentind.raw, Month, Rent.index, `November 2010`:`January 2017`)
+names(rentind.raw1)
+```
+#Using theseparate function from class to clean the data.
+```{r}
+rent.join <- left_join(rentind.raw1, rentsqft.raw1)
+rent.join1 <- separate(rent.join, Month, c("Month", "Year"), sep = " ")
+```
+
+#clean the NA in the data
+```{r}
+rent.cleaned <- filter(rent.join1, !is.na(Rent.index) | !is.na(Rentpersqft))
+```
+
+#Now we start to calculate the average cost of housing in differnet city.
+
+```{r}
+by.city <- rent.cleaned %>% group_by(City) %>% 
+           summarise(Avg.City.Rent = mean(Rentpersqft, na.rm = TRUE) * 1000) %>% 
+           arrange(desc(Avg.City.Rent)) 
+
+#Plot the top 10 cities with highest average rent values
+avgcity <- by.city %>% head(10) %>% 
+           ggplot(aes(City, Avg.City.Rent)) + 
+           geom_bar(stat = "identity", width = 0.9) + 
+           xlab("City") + 
+           ylab("Rent per 1000 square ft") + 
+           scale_y_continuous(labels = scales::dollar) + 
+           ggtitle("10 cities with highest average rent") + 
+           theme(axis.text.x = element_text(angle = 20, hjust = 1),
+                axis.text = element_text(size = 11),
+                axis.title = element_text(size = 12,face = "bold", 
+                margin(b = 20, t = 20, r = 20, l = 20)),
+                plot.title = element_text(size = 13, face = "bold"),
+                plot.margin = margin(5,20,20,20))
+
+ggplotly(avgcity, width = 500)
+```
+
+```{r}
+by.city <- rent.cleaned %>% group_by(City) %>% 
+           summarise(Avg.City.Rent = mean(Rentpersqft, na.rm = TRUE) * 1000) %>% 
+           arrange(desc(Avg.City.Rent)) 
+
+by.city1 <- na.omit(by.city)
+
+avgcity1 <- by.city1 %>% tail(10) %>% 
+            ggplot(aes(City, Avg.City.Rent)) + 
+            geom_bar(stat = "identity", width = 0.9) + 
+            xlab("City") + ylab("Rent per 1000 sq ft") + 
+            ggtitle("10 cities with lowest average rent") + 
+            scale_y_continuous(labels = scales::dollar) + 
+            theme(axis.text.x = element_text(angle = 20, hjust = 1), 
+                  axis.text = element_text(size = 11),
+                  axis.title = element_text(size = 12,face = "bold", margin(b = 20, t = 20, r = 20, l = 20)),
+                  plot.title = element_text(size = 13, face = "bold"),
+                  plot.margin = margin(5,20,20,20))
+ggplotly(avgcity1, width = 500)
+```
+
+###From the above two plots we can observe that, the average rent for an area of 1000 square feet is highest in the city of Palo Alto which is $3009.733 while the lowest is observed in the city of Youngstown which is $439.92. City of San Francisco closely follows Palo Alto with an average rent of $2829.78 for 1000 square feet apartment.Both of these cities are in the State of California which correctly explains why there are such high rent estimates in California. We can also see that there is a vast difference in the highest and lowest average rent in different parts of the country.
+
+
+#Now to calculate the biggest change in these city. 
+
+```{r}
+by_time <- rent.cleaned %>% 
+           select(Metro, Year, Rentpersqft) %>% 
+           group_by(Metro, Year) %>% 
+           filter(Year == 2010 || Year == 2017) %>% 
+           summarise(Avg.Sqft = mean(Rentpersqft, na.rm = TRUE))
+
+colnames(by_time)[3] = "Avg.Sqft"
+
+
+#Calculate the percent change
+diff <- by_time %>% spread(Year, Avg.Sqft) %>% 
+        mutate(Diff.Rent = (`2017` - `2010`)/`2010` * 100) %>% 
+        arrange(desc(Diff.Rent)) %>% head(10)
+#Barplot
+change <- ggplot(diff, aes(Metro, Diff.Rent)) + 
+          geom_bar(stat = "identity") + 
+          xlab("City") + ylab("Percent Change in rent(%)") + 
+          ggtitle("Top metros with highest change in average rent, 2010-2017") + 
+          theme(axis.text.x = element_text(angle = 40, hjust = 1),
+                axis.text =  element_text(size = 11),axis.title = element_text(size = 12,face = "bold", 
+                margin(b = 20, t = 20, r = 20, l = 20)),
+                plot.title = element_text(size = 13, face = "bold"),
+                plot.margin = margin(5,20,20,20))
+
+#interactive plot
+ggplotly(change)
+```
+
+###The Cincinnati has the biggest change in average rent from 2010-2017.The change for Cincinnati is around 55% which is quite high.
+
+#In the end we useing the data from class to see the State per capital income compare with the state rent price.
+```{r}
+data(df_state_demographics)
+df_state_demographics %>% 
+  dplyr::rename(value = per_capita_income) %>%
+  state_choropleth(title = "per_capita_income", num_colors = 6)
+```
+
+
+```{r}
+by.state <- rent.cleaned %>% group_by(State) %>% 
+           summarise(Avg.State.Rent = mean(Rentpersqft, na.rm = TRUE) * 1000) %>% 
+           arrange(desc(Avg.State.Rent)) 
+
+by.State1 <- na.omit(by.state)
+
+avgavgState <- by.State1 %>% head(10) %>% 
+           ggplot(aes(State, Avg.State.Rent)) + 
+           geom_bar(stat = "identity", width = 0.9) + 
+           xlab("State") + 
+           ylab("Rent per 1000 square ft") + 
+           scale_y_continuous(labels = scales::dollar) + 
+           ggtitle("10 States with highest average rent") + 
+           theme(axis.text.x = element_text(angle = 20, hjust = 1),
+                axis.text = element_text(size = 11),
+                axis.title = element_text(size = 12,face = "bold", 
+                margin(b = 20, t = 20, r = 20, l = 20)),
+                plot.title = element_text(size = 13, face = "bold"),
+                plot.margin = margin(5,20,20,20))
+
+
+ggplotly(avgavgState, width = 500)
+```
+
+
+###Now we can see, with the higher per capital income, normally we will have a higher rent price. 
+
+
+
+#Summary
+###In general, the states of DC, California, hiwai, MA have high rent estimates. 
+###Palo Alto, San Francisco, Washington, Jersey City, Boston are the most expensive city to rent. 
+###Cincinnati, San Jose, Portland, San Francisco have the most fast speed increase rent. 
+
